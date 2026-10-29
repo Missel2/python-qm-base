@@ -1,0 +1,69 @@
+name: Build and publish Python base
+on:
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - requirements.txt
+      - .dockerignore
+      - tests/**
+      - .github/workflows/build.yml
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: python-base-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Build linux amd64 image
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          docker build --pull --platform linux/amd64 \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --tag "$IMAGE:sha-$GITHUB_SHA" .
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+      - name: Check dependencies offline
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none "$IMAGE:sha-$GITHUB_SHA" python -m pip check
+          docker run --rm --network none -i "$IMAGE:sha-$GITHUB_SHA" python - < tests/smoke.py
+      - name: Publish to GHCR
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          export DOCKER_CONFIG="$(mktemp -d)"
+          trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push "$IMAGE:sha-$GITHUB_SHA"
+          docker tag "$IMAGE:sha-$GITHUB_SHA" "$IMAGE:deps-v1"
+          docker push "$IMAGE:deps-v1"
+          {
+            echo "### Published image"
+            echo "\`$IMAGE:sha-$GITHUB_SHA\`"
+            echo ""
+            echo "Moving convenience tag: \`$IMAGE:deps-v1\`"
+            echo ""
+            echo "For anonymous pulls, set the GHCR package visibility to Public."
+            echo "Package: https://github.com/users/Missel2/packages/container/python-qm-base/settings"
+          } >> "$GITHUB_STEP_SUMMARY"
