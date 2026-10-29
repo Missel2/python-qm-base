@@ -4,6 +4,7 @@ import math
 import platform
 
 import django
+import yaml
 import numpy as np
 import psycopg
 from psycopg import pq
@@ -12,7 +13,7 @@ from django.conf import settings
 from django.db import connection
 
 expected = {
-    "Django": "5.2.18", "psycopg": "3.2.12", "gunicorn": "23.0.0",
+    "PyYAML": "6.0.3", "Django": "5.2.18", "psycopg": "3.2.12", "gunicorn": "23.0.0",
     "whitenoise": "6.11.0", "numpy": "2.3.5", "scipy": "1.17.0",
 }
 assert platform.python_version_tuple()[:2] == ("3", "13")
@@ -21,6 +22,7 @@ for package, wanted in expected.items():
     assert actual == wanted, (package, actual, wanted)
     print(f"{package}={actual}", flush=True)
 
+assert yaml.safe_load("apiVersion: v1\nitems: [1, 2]\n") == {"apiVersion": "v1", "items": [1, 2]}
 assert pq.__impl__ == "binary", pq.__impl__
 assert pq.version() > 0
 values = np.array([11.3, 12.1, 13.0])
